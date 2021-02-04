@@ -1,225 +1,307 @@
-from utils.enums import Menu
-from utils.spotipy_handler import SpotipyHandler
-from platform import system
-from os import system as sys_command
-from threading import Thread
-from time import sleep
+from gui.main_gui import *
+from gui import resources_rc
+from utils import spotipy_handler
 from queue import Queue
+from functools import partial
+from sys import exit as exit_app
 
-class Main:
-    def __init__(self):
-        self.menu = Menu.LOGIN
-        self.exit = False
-        self.spotipyHandler = None
+class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
+    def __init__(self, *args, **kwargs):
+        # Load window design
+        QtWidgets.QMainWindow.__init__(self, *args, **kwargs)
+        self.setupUi(self)
 
-    def print_logo(self):
-        self.clscreen()
-        logo = "█▀ █▀█ █▀█ ▀█▀ █▄█   █▀▀ █▀█ ▄▀█ █▀ █▀▀ █▀█\n" + \
-               "▄█ █▀▀ █▄█ ░█░ ░█░   ██▄ █▀▄ █▀█ ▄█ ██▄ █▀▄\n"
-        print(logo)
+        # Attr
+        self.items_to_erase = []
 
-    def print_menu(self):
-        if self.menu == Menu.LOGIN:
-            print("1- Authorize Spotify.\n"
-                  "2- Login with previously used account .\n"
-                  "q- Exit.\n>>> ", end="")
-        elif self.menu == Menu.MAIN:
-            print("1- Erase liked songs.\n"
-                  "2- Erase followed artists.\n"
-                  "3- Erase saved albums.\n"
-                  "4- Erase saved shows/podcasts.\n"
-                  "5- Erase all.\n"
-                  "q- Exit.\n>>> ", end="")
+        # Hide elements
+        self.progress_pb.setVisible(False)
 
-    def execute_option(self):
-        option = input()
-        if self.menu == Menu.LOGIN:
-            if option == "1":
-                self.auth(False)
-            elif option == "2":
-                self.auth(True)
-            elif option == "q":
-                self.exit = True
-            else:
-                print("ERROR. Invalid option.")
-                self.screen_pause()
-        elif self.menu == Menu.MAIN:
-            if option == "q":
-                self.exit = True
-            elif option == "1":
-                self.erase_tracks()
-                self.screen_pause()
-            elif option == "2":
-                self.erase_artists()
-                self.screen_pause()
-            elif option == "3":
-                self.erase_albums()
-                self.screen_pause()
-            elif option == "4":
-                self.erase_shows()
-                self.screen_pause()
-            elif option == "5":
-                self.erase_all()
-                self.screen_pause()
-            else:
-                print("ERROR. Invalid option.")
-                self.screen_pause()
+        # Spotipy
+        self.spotipy_handler = spotipy_handler.SpotipyHandler()
+        
+        # Thread
+        self.thread = QtCore.QThread()
+        self.worker = self.spotipy_handler
+        self.worker.moveToThread(self.thread)
+        self.worker.started.connect(lambda: self.progress_pb.setVisible(True))
+        self.worker.started.connect(lambda: self.erase_gb.setEnabled(False))
+        self.worker.finished.connect(lambda: self.progress_pb.setVisible(False))
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.thread.quit)
 
-    def erase_tracks(self, warning=True):
-        if warning:
-            msg = "This action will delete all your liked songs, are you sure you wanna continue?\n"\
-                  "1- Yes, delete all this crap.\n"\
-                  "2- No, I change my mind.\n"\
-                  ">>> "
-            if self.yes_no_warning(msg) == "2":
-                return
-                
-        result = Queue()
-        t = Thread(target=self.spotipyHandler.erase_user_saved_tracks, args=[result])
-        t.start()
-        self.clscreen()
-        print("Erasing tracks", end="")
-        while t.is_alive():
-            print(".", end="")
-            sleep(1)
-        result = result.get()
-        self.clscreen()
-        if result:
-            print("Tracks erased successfully!")
-        else:
-            print("An error occurred during the erase process :(")
+        # Buttons
+        self.connect_btn.clicked.connect(self.connect)
+        self.validate_btn.clicked.connect(self.validate)
+        self.erase_btn.clicked.connect(self.erase)
+        self.select_all_btn.clicked.connect(lambda: self.select_all(True))
+        self.unselect_all_btn.clicked.connect(lambda: self.select_all(False))
 
-    def erase_artists(self, warning=True):
-        if warning:
-            msg = "This action will unfollow all your followed artists, are you sure you wanna continue?\n"\
-                  "1- Yes, nobody wants to follow Nickelback.\n"\
-                  "2- No, I change my mind, I love Nickelback.\n"\
-                  ">>> "
-            if self.yes_no_warning(msg) == "2":
-                return
+        # Combobox
+        self.select_type_cmb.currentIndexChanged.connect(self.get_items)
 
-        result = Queue()
-        t = Thread(target=self.spotipyHandler.erase_user_saved_artists, args=[result])
-        t.start()
-        self.clscreen()
-        print("Erasing artists", end="")
-        while t.is_alive():
-            print(".", end="")
-            sleep(1)
-        result = result.get()
-        self.clscreen()
-        if result:
-            print("Artists erased successfully!")
-        else:
-            print("An error occurred during the erase process :(")
+        # Warning box
+        self.msg_box = QtWidgets.QMessageBox
 
-    def erase_albums(self, warning=True):
-        if warning:
-            msg = "This action will delete all your liked albums, are you sure you wanna continue?\n"\
-                  "1- Yes, delete all this crap.\n"\
-                  "2- No, I change my mind.\n"\
-                  ">>> "
-            if self.yes_no_warning(msg) == "2":
-                return
-        result = Queue()
-        t = Thread(target=self.spotipyHandler.erase_user_saved_albums, args=[result])
-        t.start()
-        self.clscreen()
-        print("Erasing albums", end="")
-        while t.is_alive():
-            print(".", end="")
-            sleep(1)
-        result = result.get()
-        self.clscreen()
-        if result:
-            print("Albums erased successfully!")
-        else:
-            print("An error occurred during the erase process :(")
+        # MenuBar
+        self.actionExit.triggered.connect(lambda: exit_app())
+        self.actionAbout.triggered.connect(self.open_about)
 
-    def erase_shows(self, warning=True):
-        if warning:
-            msg = "This action will delete all your liked shows/podcasts, are you sure you wanna continue?\n"\
-                  "1- Yes, delete all this crap.\n"\
-                  "2- No, I change my mind.\n"\
-                  ">>> "
-            if self.yes_no_warning(msg) == "2":
-                return
-        result = Queue()
-        t = Thread(target=self.spotipyHandler.erase_user_saved_shows, args=[result])
-        t.start()
-        self.clscreen()
-        print("Erasing shows/podcasts", end="")
-        while t.is_alive():
-            print(".", end="")
-            sleep(1)
-        result = result.get()
-        self.clscreen()
-        if result:
-            print("Shows/Podcasts erased successfully!")
-        else:
-            print("An error occurred during the erase process :(")
+    def clear_thread_connections(self):
+        self.thread.started.disconnect()
+        self.worker.progress.disconnect()
+        self.worker.finished.disconnect()
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(lambda: self.progress_pb.setVisible(False))
+        self.worker.finished.connect(lambda: self.erase_gb.setEnabled(True))
+        self.worker.started.connect(lambda: self.progress_pb.setVisible(True))
 
-    def erase_all(self):
-        self.clscreen()
-        msg = "This action will delete all your liked songs, albums, shows/podcasts and unfollow your followed artists.\n"\
-                "Are you sure you wanna continue?\n"\
-                "1- Yes, delete all this crap.\n"\
-                "2- No, I change my mind.\n"\
-                ">>> "
-        if self.yes_no_warning(msg) == "2":
+    def connect(self):
+        self.spotipy_handler.login(False, False)
+        self.status_sb.showMessage("Login...")
+        self.login_link_txt.setEnabled(True)
+        self.login_link_lbl.setEnabled(True)
+        self.login_link_lbl.setEnabled(True)
+        self.login_connect_lbl.setEnabled(True)
+        self.login_validate_lbl.setEnabled(True)
+        self.validate_btn.setEnabled(True)
+    
+    def validate(self):
+        link = self.login_link_txt.toPlainText()
+        if not link:
+            self.login_error()
             return
-        self.clscreen()
-        self.erase_tracks(warning=False)
-        self.erase_albums(warning=False)
-        self.erase_shows(warning=False)
-        self.erase_artists(warning=False)
-        self.clscreen()
-        print("\nDone! Hope you enjoy you clean spotify!")
+            
+        self.thread.started.connect(lambda: self.spotipy_handler.set_token_from_link(link))
+        self.worker.finished.connect(self.get_user_data)
+        self.thread.start()
 
-    def yes_no_warning(self, msg):
-        confirmation = ""
-        while confirmation != "1" and confirmation != "2":
-            self.clscreen()
-            print(msg, end="")
-            confirmation = input()
-            if confirmation != "1" and confirmation != "2":
-                print("ERROR. Invalid option.")
-                self.screen_pause()
-        return confirmation
+    def get_user_data(self, result):
+        if not result:
+            self.login_error()
+            return
+        self.status_sb.showMessage("Login successful!")
+        self.login_gb.setEnabled(False)
+        self.erase_gb.setEnabled(True)
+        # self.clear_thread_connections()
+        # self.thread.started.connect(self.spotipy_handler.get_user_data)
+        # self.worker.finished.connect(self.load_user_data)
+        # self.thread.start()
 
-    def auth(self, cached=False):
-        self.clscreen()
-        try:
-            self.spotipyHandler = SpotipyHandler()
-            if self.spotipyHandler.login(cached=cached):
-                self.menu = Menu.MAIN
-                self.clscreen()
-                print("Login successful!\n")
-        except:
-            self.clscreen()
-            print("ERROR during login process.\n")
-        self.screen_pause()
+    def load_user_data(self, user_data):
+        pass
+        # if user_data:
+        #     self.user_gb.setTitle("User: " + str(user_data['username']))
+        #     self.total_liked_tracks_lbl.setText("Total liked tracks: " + str(user_data['total_tracks']))
+        #     self.total_followed_artists_lbl.setText("Total followed artists: " + str(user_data['total_artists']))
+        #     self.total_liked_albums_lbl.setText("Total liked albums: " + str(user_data['total_albums']))
+        #     self.total_liked_shows_lbl.setText("Total liked podcasts: " + str(user_data['total_shows']))
+        #     self.user_gb.setVisible(True)
+        # else:
+        #     self.status_sb.showMessage("Error getting user info!")
 
-    def screen_pause(self):
-        input("\n\nPress ENTER key to continue...")
+    def login_error(self):
+        self.status_sb.showMessage("The pasted link is not valid!")
+        self.login_link_lbl.setEnabled(False)
+        self.login_connect_lbl.setEnabled(False)
+        self.login_validate_lbl.setEnabled(False)
+        self.validate_btn.setEnabled(False)
 
-    def clscreen(self):
-        if system() == "Windows":
-            sys_command("cls")
-        elif system() == "Linux":
-            sys_command("clear")
-        elif system() == "Darwin":
-            sys_command("clear")
+    def get_items(self):
+        self.list_l.clear()
+        idx = self.select_type_cmb.currentIndex()
+        self.clear_thread_connections()
+        if idx == 0:
+            self.thread.started.connect(self.spotipy_handler.current_user_saved_tracks)
+            self.worker.progress.connect(self.update_progress)
+            self.worker.finished.connect(self.load_tracks)
+        elif idx == 1:
+            self.thread.started.connect(self.spotipy_handler.current_user_saved_artists)
+            self.worker.progress.connect(self.update_progress)
+            self.worker.finished.connect(self.load_artists)
+        elif idx == 2:
+            self.thread.started.connect(self.spotipy_handler.current_user_saved_albums)
+            self.worker.progress.connect(self.update_progress)
+            self.worker.finished.connect(self.load_albums)
+        elif idx == 3:
+            self.thread.started.connect(self.spotipy_handler.current_user_saved_shows)
+            self.worker.progress.connect(self.update_progress)
+            self.worker.finished.connect(self.load_shows)
+        self.thread.start()
+    
+    def load_tracks(self, all_tracks):
+        if not all_tracks:
+            self.status_sb.showMessage("You don't have any liked tracks in your library!")
+            return
+        for track in all_tracks:
+            item = QtWidgets.QListWidgetItem(self.spotipy_handler.get_track_info_as_string(track))
+            item.setData(32, track)
+            self.list_l.addItem(item)
+
+    def load_artists(self, all_artists):
+        if not all_artists:
+            self.status_sb.showMessage("You don't have any followed artists in your library!")
+            return
+        for artist in all_artists:
+            item = QtWidgets.QListWidgetItem(self.spotipy_handler.get_artist_info_as_string(artist))
+            item.setData(32, artist)
+            self.list_l.addItem(item)
+
+    def load_albums(self, all_albums):
+        if not all_albums:
+            self.status_sb.showMessage("You don't have any liked albums in your library!")
+            return
+        for album in all_albums:
+            item = QtWidgets.QListWidgetItem(self.spotipy_handler.get_album_info_as_string(album))
+            item.setData(32, album)
+            self.list_l.addItem(item)
+
+    def load_shows(self, all_shows):
+        if not all_shows:
+            self.status_sb.showMessage("You don't have any liked podcasts in your library!")
+            return
+        for show in all_shows:
+            item = QtWidgets.QListWidgetItem(self.spotipy_handler.get_show_info_as_string(show))
+            item.setData(32, show)
+            self.list_l.addItem(item)
+
+    def erase(self):
+        idx = self.select_type_cmb.currentIndex()
+        if idx == 0:
+            self.erase_tracks()
+        elif idx == 1:
+            self.erase_artists()
+        elif idx == 2:
+            self.erase_albums()
+        elif idx == 3:
+            self.erase_shows()
+
+    def erase_tracks(self):
+        if not self.warning("This action will delete all the selected liked songs. Are you sure you wanna continue?"):
+            return
+        selected_items = self.list_l.selectedItems()
+        if not selected_items:
+            self.status_sb.showMessage("Select at least one track first!")
+            return
+        selected_items[:] = [item.data(32) for item in selected_items]
+        self.clear_thread_connections()
+        self.thread.started.connect(partial(self.spotipy_handler.erase_user_saved_tracks, selected_items))
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.result_erase_tracks)
+        self.thread.start()
+    
+    def result_erase_tracks(self, result):
+        if result:
+            self.status_sb.showMessage("Tracks erased successfully!")
+            self.success("Tracks erased successfully!")
         else:
-            print("\n" * 20)
+            self.status_sb.showMessage("An error occurred during the erase process :(")
+            self.error("An error occurred during the erase process :(")
+        self.get_items()
 
-    def run(self):
-        while not self.exit:
-            self.print_logo()
-            self.print_menu()
-            self.execute_option()
-        print("\nbye!")
+    def erase_artists(self):
+        if not self.warning("This action will delete all the selected followed artists. Are you sure you wanna continue?"):
+            return
+        selected_items = self.list_l.selectedItems()
+        if not selected_items:
+            self.status_sb.showMessage("Select at least one artist first!")
+            return
+        selected_items[:] = [item.data(32) for item in selected_items]
+        self.clear_thread_connections()
+        self.thread.started.connect(partial(self.spotipy_handler.erase_user_saved_artists, selected_items))
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.result_erase_artists)
+        self.thread.start()
+    
+    def result_erase_artists(self, result):
+        if result:
+            self.status_sb.showMessage("Artists erased successfully!")
+            self.success("Artists erased successfully!")
+        else:
+            self.status_sb.showMessage("An error occurred during the erase process :(")
+            self.error("An error occurred during the erase process :(")
+        self.get_items()
 
-if __name__ == '__main__':
-    main = Main()
-    main.run()
+    def erase_albums(self):
+        if not self.warning("This action will delete all the selected liked albums. Are you sure you wanna continue?"):
+            return
+        selected_items = self.list_l.selectedItems()
+        if not selected_items:
+            self.status_sb.showMessage("Select at least one album first!")
+            return
+        selected_items[:] = [item.data(32) for item in selected_items]
+        self.clear_thread_connections()
+        self.thread.started.connect(partial(self.spotipy_handler.erase_user_saved_albums, selected_items))
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.result_erase_albums)
+        self.thread.start()
+
+    def result_erase_albums(self, result):
+        if result:
+            self.status_sb.showMessage("Albums erased successfully!")
+            self.success("Albums erased successfully!")
+        else:
+            self.status_sb.showMessage("An error occurred during the erase process :(")
+            self.error("An error occurred during the erase process :(")
+        self.get_items()
+
+    def erase_shows(self):
+        if not self.warning("This action will delete all the selected liked podcasts. Are you sure you wanna continue?"):
+            return
+        selected_items = self.list_l.selectedItems()
+        if not selected_items:
+            self.status_sb.showMessage("Select at least one podcasts first!")
+            return
+        selected_items[:] = [item.data(32) for item in selected_items]
+        self.clear_thread_connections()
+        self.thread.started.connect(partial(self.spotipy_handler.erase_user_saved_shows, selected_items))
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.result_erase_shows)
+        self.thread.start()
+
+    def result_erase_shows(self, result):
+        if result:
+            self.status_sb.showMessage("Podcasts erased successfully!")
+            self.success("Podcasts erased successfully!")
+        else:
+            self.status_sb.showMessage("An error occurred during the erase process :(")
+            self.error("An error occurred during the erase process :(")
+        self.get_items()
+
+    def select_all(self, select):
+        if select:
+            self.list_l.selectAll()
+        else:
+            self.list_l.clearSelection()
+
+    def warning(self, msg):
+        ret = self.msg_box.warning(self, 'Warning', msg, self.msg_box.Yes | self.msg_box.No)
+        if ret == self.msg_box.Yes:
+            return True
+        else:
+            return False
+
+    def success(self, msg):
+        self.msg_box.information(self, 'Success', msg)
+    
+    def error(self, msg):
+        self.msg_box.critical(self, 'Error', msg)
+
+    def open_about(self):
+        self.about = QtWidgets.QMessageBox()
+        self.about.setIconPixmap(QtGui.QPixmap(":/icon/icon.png"))
+        self.about.setText("SpotyEraser\n\nFrancisco Maurino - 2021\n\nhttps://github.com/Laikos38")
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(":/icon/icon.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.about.setWindowIcon(icon)
+        self.about.exec_()
+
+    def update_progress(self, msg):
+        self.status_sb.showMessage(msg)
+
+
+if __name__ == "__main__":
+    app = QtWidgets.QApplication([])
+    window = MainWindow()
+    window.show()
+    app.exec_()
