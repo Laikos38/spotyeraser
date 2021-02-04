@@ -289,6 +289,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def open_about(self):
         self.about = QtWidgets.QMessageBox()
+        self.about.setWindowTitle("About")
         self.about.setIconPixmap(QtGui.QPixmap(":/icon/icon.png"))
         self.about.setText("SpotyEraser\n\nFrancisco Maurino - 2021\n\nhttps://github.com/Laikos38")
         icon = QtGui.QIcon()
