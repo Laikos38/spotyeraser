@@ -24,9 +24,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.thread = QtCore.QThread()
         self.worker = self.spotipy_handler
         self.worker.moveToThread(self.thread)
-        self.worker.started.connect(lambda: self.progress_pb.setVisible(True))
-        self.worker.started.connect(lambda: self.erase_gb.setEnabled(False))
-        self.worker.finished.connect(lambda: self.progress_pb.setVisible(False))
+        self.worker.started.connect(partial(self.progress_pb.setVisible, True))
+        self.worker.started.connect(partial(self.erase_gb.setEnabled, False))
+        self.worker.finished.connect(partial(self.progress_pb.setVisible, False))
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self.thread.quit)
 
@@ -34,8 +34,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.connect_btn.clicked.connect(self.connect)
         self.validate_btn.clicked.connect(self.validate)
         self.erase_btn.clicked.connect(self.erase)
-        self.select_all_btn.clicked.connect(lambda: self.select_all(True))
-        self.unselect_all_btn.clicked.connect(lambda: self.select_all(False))
+        self.select_all_btn.clicked.connect(partial(self.select_all, True))
+        self.unselect_all_btn.clicked.connect(partial(self.select_all, False))
 
         # Combobox
         self.select_type_cmb.currentIndexChanged.connect(self.get_items)
@@ -44,7 +44,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.msg_box = QtWidgets.QMessageBox
 
         # MenuBar
-        self.actionExit.triggered.connect(lambda: exit_app())
+        self.actionExit.triggered.connect(exit_app)
         self.actionAbout.triggered.connect(self.open_about)
 
     def clear_thread_connections(self):
@@ -52,9 +52,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.worker.progress.disconnect()
         self.worker.finished.disconnect()
         self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(lambda: self.progress_pb.setVisible(False))
-        self.worker.finished.connect(lambda: self.erase_gb.setEnabled(True))
-        self.worker.started.connect(lambda: self.progress_pb.setVisible(True))
+        self.worker.finished.connect(partial(self.progress_pb.setVisible, False))
+        self.worker.finished.connect(partial(self.erase_gb.setEnabled, True))
+        self.worker.started.connect(partial(self.progress_pb.setVisible, True))
 
     def connect(self):
         self.spotipy_handler.login(False, False)
@@ -72,7 +72,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.login_error()
             return
             
-        self.thread.started.connect(lambda: self.spotipy_handler.set_token_from_link(link))
+        self.thread.started.connect(partial(self.spotipy_handler.set_token_from_link, link))
         self.worker.finished.connect(self.get_user_data)
         self.thread.start()
 
