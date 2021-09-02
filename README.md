@@ -1,2 +1,2 @@
 # spoty-eraser
-Simple script to delete saved songs, artists or albums of your Spotify library.
+Simple desktop app to bulk delete saved songs, artists or albums of your Spotify library. 
